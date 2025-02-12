@@ -1,0 +1,13 @@
+{
+    "name": "watarushirako/party-club",
+    "description": "Your plugin description",
+    "type": "wordpress-plugin",
+    "require": {
+      "php": ">=7.4"
+    },
+    "autoload": {
+      "psr-4": {
+        "PartyClub\\": "src/"
+      }
+    }
+  }
