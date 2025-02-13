@@ -42,7 +42,7 @@ function party_club_register_event_post_type()
         'labels'             => $labels,
         'public'             => true,
         'has_archive'        => true,
-        'supports'           => array('title', 'editor', 'thumbnail', 'author', 'comments'),
+        'supports'           => array('title', 'thumbnail', 'author', 'comments'),
         'capability_type'    => array('event', 'events'),
         'map_meta_cap'       => true,
         'show_in_rest'       => true,
@@ -92,9 +92,9 @@ function party_club_register_event_registration_post_type()
         'labels'                => $labels,
         'supports'              => array('title', 'editor', 'custom-fields'),
         'hierarchical'          => false,
-        'public'                => false,  // フロントエンドに公開しない
+        'public'                => false,
         'show_ui'               => true,
-        'show_in_menu'          => true,
+        'show_in_menu'          => false,
         'menu_position'         => 5,
         'menu_icon'             => 'dashicons-calendar',
         'show_in_admin_bar'     => true,
@@ -420,3 +420,309 @@ function party_club_participant_count_shortcode($atts)
     return $count;
 }
 add_shortcode('party_club_participant_count', 'party_club_participant_count_shortcode');
+
+
+/**
+ * イベント編集画面に参加予定者一覧のメタボックスを追加
+ */
+function party_club_add_event_participants_meta_box()
+{
+    add_meta_box(
+        'party_club_event_participants', // メタボックスID
+        __('このイベントに参加予定のユーザー', 'party-club'), // タイトル
+        'party_club_event_participants_meta_box_callback', // コールバック関数
+        'event', // 対象の投稿タイプ
+        'normal',
+        'default'
+    );
+}
+add_action('add_meta_boxes', 'party_club_add_event_participants_meta_box');
+
+
+/**
+ * 参加予定者一覧を表示するメタボックスのコールバック関数
+ *
+ * @param WP_Post $post 現在のイベント投稿
+ */
+function party_club_event_participants_meta_box_callback($post)
+{
+    $event_id = $post->ID;
+
+    // event_registration 投稿タイプから、meta_key 'event_id' が一致する投稿を取得
+    $args = array(
+        'post_type'      => 'event_registration',
+        'posts_per_page' => -1,
+        'meta_query'     => array(
+            array(
+                'key'     => 'event_id',
+                'value'   => $event_id,
+                'compare' => '=',
+            ),
+        ),
+        'fields'         => 'ids',
+    );
+    $query = new WP_Query($args);
+
+    if ($query->have_posts()) {
+        echo '<ul style="list-style: none; padding: 0;">';
+        foreach ($query->posts as $registration_id) {
+            // 各登録から user_id を取得
+            $user_id = get_post_meta($registration_id, 'user_id', true);
+            if ($user_id) {
+                $user = get_userdata($user_id);
+                if ($user) {
+                    // ユーザーのアバター（32pxサイズ）、表示名、メールアドレスをクリック可能に（mailtoリンク）表示
+                    $avatar   = get_avatar($user_id, 32);
+                    $email    = sprintf('<a href="mailto:%s">%s</a>', esc_attr($user->user_email), esc_html($user->user_email));
+                    echo '<li style="margin-bottom: 8px; display: flex; align-items: center;">';
+                    echo $avatar;
+                    echo '<div style="margin-left: 8px;">';
+                    echo '<strong>' . esc_html($user->display_name) . '</strong><br>';
+                    echo $email;
+                    echo '</div>';
+                    echo '</li>';
+                }
+            }
+        }
+        echo '</ul>';
+        // ボタン（CSVエクスポート、参加者編集、一斉メール送信）を横並びで出力
+        echo '<p>';
+        echo '<a href="' . esc_url(admin_url('admin-post.php?action=party_club_export_participants&event_id=' . $event_id)) . '" class="button button-primary">' . __('参加者をCSVでエクスポート', 'party-club') . '</a> ';
+        echo '<a href="' . esc_url(admin_url('edit.php?post_type=event&page=party-club-participants&event_id=' . $event_id)) . '" class="button">' . __('参加者を編集', 'party-club') . '</a> ';
+        echo '<a href="' . esc_url(admin_url('admin.php?page=party_club_mass_email&event_id=' . $event_id)) . '" class="button button-secondary">' . __('一斉メール送信', 'party-club') . '</a>';
+        echo '</p>';
+    } else {
+        echo '<p>' . __('参加予定のユーザーはいません。', 'party-club') . '</p>';
+    }
+    wp_reset_postdata();
+}
+
+
+/**
+ * 参加者一覧をCSV出力する（管理画面用）
+ */
+function party_club_export_participants()
+{
+    if (! current_user_can('edit_posts')) {
+        wp_die(__('アクセス権がありません。', 'party-club'));
+    }
+    $event_id = isset($_GET['event_id']) ? intval($_GET['event_id']) : 0;
+    if (! $event_id) {
+        wp_die(__('無効なイベントIDです。', 'party-club'));
+    }
+
+    header('Content-Type: text/csv; charset=utf-8');
+    header('Content-Disposition: attachment; filename=participants_event_' . $event_id . '.csv');
+
+    $output = fopen('php://output', 'w');
+    // ヘッダー行を出力
+    fputcsv($output, array('Display Name', 'Email'));
+
+    $args = array(
+        'post_type'      => 'event_registration',
+        'posts_per_page' => -1,
+        'meta_query'     => array(
+            array(
+                'key'     => 'event_id',
+                'value'   => $event_id,
+                'compare' => '=',
+            ),
+        ),
+        'fields'         => 'ids',
+    );
+    $query = new WP_Query($args);
+    foreach ($query->posts as $registration_id) {
+        $user_id = get_post_meta($registration_id, 'user_id', true);
+        if ($user_id) {
+            $user = get_userdata($user_id);
+            if ($user) {
+                fputcsv($output, array($user->display_name, $user->user_email));
+            }
+        }
+    }
+    fclose($output);
+    exit;
+}
+add_action('admin_post_party_club_export_participants', 'party_club_export_participants');
+
+
+/**
+ * イベント投稿の管理画面にサブメニュー「参加者編集」を追加
+ */
+function party_club_add_participants_submenu()
+{
+    add_submenu_page(
+        'edit.php?post_type=event', // 親：イベント投稿の管理画面
+        __('イベント参加者編集', 'party-club'),
+        __('参加者編集', 'party-club'),
+        'edit_posts',
+        'party-club-participants',
+        'party_club_render_participants_page'
+    );
+    // 登録したサブメニューを管理画面から非表示にする
+    remove_submenu_page('edit.php?post_type=event', 'party-club-participants');
+}
+add_action('admin_menu', 'party_club_add_participants_submenu');
+
+/**
+ * 参加者一覧画面を出力するコールバック
+ */
+function party_club_render_participants_page()
+{
+    if (! isset($_GET['event_id'])) {
+        echo '<div class="wrap"><h1>' . __('イベント参加者編集', 'party-club') . '</h1>';
+        echo '<p>' . __('イベントIDが指定されていません。', 'party-club') . '</p></div>';
+        return;
+    }
+    $event_id = intval($_GET['event_id']);
+
+    echo '<div class="wrap"><h1>' . __('イベント参加者編集', 'party-club') . '</h1>';
+    $event_title = get_the_title($event_id);
+    echo '<h2>' . sprintf(__('「%s」の参加者一覧', 'party-club'), $event_title) . '</h2>';
+
+    $args = array(
+        'post_type'      => 'event_registration',
+        'posts_per_page' => -1,
+        'meta_query'     => array(
+            array(
+                'key'     => 'event_id',
+                'value'   => $event_id,
+                'compare' => '=',
+            ),
+        ),
+        'fields'         => 'ids',
+    );
+    $query = new WP_Query($args);
+
+    if ($query->have_posts()) {
+        echo '<table class="widefat fixed striped">';
+        echo '<thead><tr><th>' . __('アバター', 'party-club') . '</th><th>' . __('ユーザー名', 'party-club') . '</th><th>' . __('メールアドレス', 'party-club') . '</th><th>' . __('操作', 'party-club') . '</th></tr></thead>';
+        echo '<tbody>';
+        foreach ($query->posts as $reg_id) {
+            $user_id = get_post_meta($reg_id, 'user_id', true);
+            if ($user_id) {
+                $user = get_userdata($user_id);
+                if ($user) {
+                    $avatar = get_avatar($user_id, 32);
+                    $mailto = sprintf('<a href="mailto:%s">%s</a>', esc_attr($user->user_email), esc_html($user->user_email));
+                    $delete_url = wp_nonce_url(admin_url('admin-post.php?action=party_club_delete_registration&registration_id=' . $reg_id . '&event_id=' . $event_id), 'party_club_delete_registration');
+                    echo '<tr>';
+                    echo '<td>' . $avatar . '</td>';
+                    echo '<td>' . esc_html($user->display_name) . '</td>';
+                    echo '<td>' . $mailto . '</td>';
+                    echo '<td><a href="' . esc_url($delete_url) . '" class="button">' . __('削除', 'party-club') . '</a></td>';
+                    echo '</tr>';
+                }
+            }
+        }
+        echo '</tbody></table>';
+    } else {
+        echo '<p>' . __('参加者はいません。', 'party-club') . '</p>';
+    }
+    echo '</div>';
+    wp_reset_postdata();
+}
+
+function party_club_add_mass_email_submenu()
+{
+    add_submenu_page(
+        null, // 親メニューに表示しない
+        __('一斉メール送信', 'party-club'),
+        __('一斉メール送信', 'party-club'),
+        'edit_posts',
+        'party_club_mass_email',
+        'party_club_render_mass_email_page'
+    );
+}
+add_action('admin_menu', 'party_club_add_mass_email_submenu');
+
+function party_club_render_mass_email_page()
+{
+    if (! isset($_GET['event_id'])) {
+        echo '<div class="wrap"><h1>' . __('一斉メール送信', 'party-club') . '</h1>';
+        echo '<p>' . __('イベントIDが指定されていません。', 'party-club') . '</p></div>';
+        return;
+    }
+    $event_id = intval($_GET['event_id']);
+    $event_title = get_the_title($event_id);
+?>
+    <div class="wrap">
+        <h1><?php _e('一斉メール送信', 'party-club'); ?></h1>
+        <p><?php echo sprintf(__('「%s」の参加者にメールを送信します。', 'party-club'), $event_title); ?></p>
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+            <?php wp_nonce_field('party_club_mass_email', 'party_club_mass_email_nonce'); ?>
+            <input type="hidden" name="action" value="party_club_mass_email">
+            <input type="hidden" name="event_id" value="<?php echo esc_attr($event_id); ?>">
+            <table class="form-table">
+                <tr>
+                    <th scope="row"><label for="subject"><?php _e('件名', 'party-club'); ?></label></th>
+                    <td><input name="subject" type="text" id="subject" class="regular-text" required></td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="message"><?php _e('本文', 'party-club'); ?></label></th>
+                    <td><textarea name="message" id="message" rows="10" class="large-text code" required></textarea></td>
+                </tr>
+            </table>
+            <?php submit_button(__('送信', 'party-club')); ?>
+        </form>
+    </div>
+<?php
+}
+
+
+function party_club_handle_mass_email()
+{
+    if (! current_user_can('edit_posts')) {
+        wp_die(__('権限がありません。', 'party-club'));
+    }
+    if (! isset($_POST['party_club_mass_email_nonce']) || ! wp_verify_nonce($_POST['party_club_mass_email_nonce'], 'party_club_mass_email')) {
+        wp_die(__('セキュリティチェックに失敗しました。', 'party-club'));
+    }
+    $event_id = isset($_POST['event_id']) ? intval($_POST['event_id']) : 0;
+    if (! $event_id) {
+        wp_die(__('無効なイベントIDです。', 'party-club'));
+    }
+    $subject = sanitize_text_field($_POST['subject']);
+    $message = wp_kses_post($_POST['message']);
+
+    // 対象イベントの参加者メールアドレスを収集
+    $args = array(
+        'post_type'      => 'event_registration',
+        'posts_per_page' => -1,
+        'meta_query'     => array(
+            array(
+                'key'     => 'event_id',
+                'value'   => $event_id,
+                'compare' => '=',
+            ),
+        ),
+        'fields'         => 'ids',
+    );
+    $query = new WP_Query($args);
+    $emails = array();
+    foreach ($query->posts as $reg_id) {
+        $user_id = get_post_meta($reg_id, 'user_id', true);
+        if ($user_id) {
+            $user = get_userdata($user_id);
+            if ($user && is_email($user->user_email)) {
+                $emails[] = $user->user_email;
+            }
+        }
+    }
+    wp_reset_postdata();
+
+    // メール送信（ここではBCCを利用）
+    $headers = array('BCC: ' . implode(',', $emails));
+    $from_email = get_bloginfo('admin_email');
+    $headers[] = 'From: ' . get_bloginfo('name') . ' <' . $from_email . '>';
+
+    $sent = wp_mail($from_email, $subject, $message, $headers);
+    if ($sent) {
+        wp_redirect(admin_url('edit.php?post_type=event&page=party-club-participants&event_id=' . $event_id . '&mass_email=success'));
+        exit;
+    } else {
+        wp_redirect(admin_url('edit.php?post_type=event&page=party-club-participants&event_id=' . $event_id . '&mass_email=failed'));
+        exit;
+    }
+}
+add_action('admin_post_party_club_mass_email', 'party_club_handle_mass_email');
