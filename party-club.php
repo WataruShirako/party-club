@@ -427,13 +427,18 @@ add_shortcode('party_club_participant_count', 'party_club_participant_count_shor
  */
 function party_club_add_event_participants_meta_box()
 {
+    global $post;
+    // 投稿が存在していて、かつ auto-draft の場合はメタボックスを追加しない
+    if (isset($post) && 'auto-draft' === $post->post_status) {
+        return;
+    }
     add_meta_box(
         'party_club_event_participants', // メタボックスID
         __('このイベントに参加予定のユーザー', 'party-club'), // タイトル
         'party_club_event_participants_meta_box_callback', // コールバック関数
         'event', // 対象の投稿タイプ
         'normal',
-        'default'
+        'high'
     );
 }
 add_action('add_meta_boxes', 'party_club_add_event_participants_meta_box');
@@ -446,6 +451,12 @@ add_action('add_meta_boxes', 'party_club_add_event_participants_meta_box');
  */
 function party_club_event_participants_meta_box_callback($post)
 {
+
+    // 新規追加時（auto-draft または投稿IDがない場合）は表示しない
+    if ('auto-draft' === $post->post_status || ! $post->ID) {
+        return;
+    }
+
     $event_id = $post->ID;
 
     // event_registration 投稿タイプから、meta_key 'event_id' が一致する投稿を取得
@@ -646,26 +657,26 @@ function party_club_render_mass_email_page()
     $event_id = intval($_GET['event_id']);
     $event_title = get_the_title($event_id);
 ?>
-    <div class="wrap">
-        <h1><?php _e('一斉メール送信', 'party-club'); ?></h1>
-        <p><?php echo sprintf(__('「%s」の参加者にメールを送信します。', 'party-club'), $event_title); ?></p>
-        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
-            <?php wp_nonce_field('party_club_mass_email', 'party_club_mass_email_nonce'); ?>
-            <input type="hidden" name="action" value="party_club_mass_email">
-            <input type="hidden" name="event_id" value="<?php echo esc_attr($event_id); ?>">
-            <table class="form-table">
-                <tr>
-                    <th scope="row"><label for="subject"><?php _e('件名', 'party-club'); ?></label></th>
-                    <td><input name="subject" type="text" id="subject" class="regular-text" required></td>
-                </tr>
-                <tr>
-                    <th scope="row"><label for="message"><?php _e('本文', 'party-club'); ?></label></th>
-                    <td><textarea name="message" id="message" rows="10" class="large-text code" required></textarea></td>
-                </tr>
-            </table>
-            <?php submit_button(__('送信', 'party-club')); ?>
-        </form>
-    </div>
+<div class="wrap">
+    <h1><?php _e('一斉メール送信', 'party-club'); ?></h1>
+    <p><?php echo sprintf(__('「%s」の参加者にメールを送信します。', 'party-club'), $event_title); ?></p>
+    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+        <?php wp_nonce_field('party_club_mass_email', 'party_club_mass_email_nonce'); ?>
+        <input type="hidden" name="action" value="party_club_mass_email">
+        <input type="hidden" name="event_id" value="<?php echo esc_attr($event_id); ?>">
+        <table class="form-table">
+            <tr>
+                <th scope="row"><label for="subject"><?php _e('件名', 'party-club'); ?></label></th>
+                <td><input name="subject" type="text" id="subject" class="regular-text" required></td>
+            </tr>
+            <tr>
+                <th scope="row"><label for="message"><?php _e('本文', 'party-club'); ?></label></th>
+                <td><textarea name="message" id="message" rows="10" class="large-text code" required></textarea></td>
+            </tr>
+        </table>
+        <?php submit_button(__('送信', 'party-club')); ?>
+    </form>
+</div>
 <?php
 }
 
