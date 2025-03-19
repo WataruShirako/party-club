@@ -657,26 +657,26 @@ function party_club_render_mass_email_page()
     $event_id = intval($_GET['event_id']);
     $event_title = get_the_title($event_id);
 ?>
-<div class="wrap">
-    <h1><?php _e('一斉メール送信', 'party-club'); ?></h1>
-    <p><?php echo sprintf(__('「%s」の参加者にメールを送信します。', 'party-club'), $event_title); ?></p>
-    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
-        <?php wp_nonce_field('party_club_mass_email', 'party_club_mass_email_nonce'); ?>
-        <input type="hidden" name="action" value="party_club_mass_email">
-        <input type="hidden" name="event_id" value="<?php echo esc_attr($event_id); ?>">
-        <table class="form-table">
-            <tr>
-                <th scope="row"><label for="subject"><?php _e('件名', 'party-club'); ?></label></th>
-                <td><input name="subject" type="text" id="subject" class="regular-text" required></td>
-            </tr>
-            <tr>
-                <th scope="row"><label for="message"><?php _e('本文', 'party-club'); ?></label></th>
-                <td><textarea name="message" id="message" rows="10" class="large-text code" required></textarea></td>
-            </tr>
-        </table>
-        <?php submit_button(__('送信', 'party-club')); ?>
-    </form>
-</div>
+    <div class="wrap">
+        <h1><?php _e('一斉メール送信', 'party-club'); ?></h1>
+        <p><?php echo sprintf(__('「%s」の参加者にメールを送信します。', 'party-club'), $event_title); ?></p>
+        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+            <?php wp_nonce_field('party_club_mass_email', 'party_club_mass_email_nonce'); ?>
+            <input type="hidden" name="action" value="party_club_mass_email">
+            <input type="hidden" name="event_id" value="<?php echo esc_attr($event_id); ?>">
+            <table class="form-table">
+                <tr>
+                    <th scope="row"><label for="subject"><?php _e('件名', 'party-club'); ?></label></th>
+                    <td><input name="subject" type="text" id="subject" class="regular-text" required></td>
+                </tr>
+                <tr>
+                    <th scope="row"><label for="message"><?php _e('本文', 'party-club'); ?></label></th>
+                    <td><textarea name="message" id="message" rows="10" class="large-text code" required></textarea></td>
+                </tr>
+            </table>
+            <?php submit_button(__('送信', 'party-club')); ?>
+        </form>
+    </div>
 <?php
 }
 
@@ -737,3 +737,35 @@ function party_club_handle_mass_email()
     }
 }
 add_action('admin_post_party_club_mass_email', 'party_club_handle_mass_email');
+
+
+// イベント投稿のパーマリンクを変更
+
+function party_club_event_permalink($post_link, $post, $leavename)
+{
+    if ('event' === $post->post_type) {
+        return home_url('/' . $post->ID . '/');
+    }
+    return $post_link;
+}
+add_filter('post_type_link', 'party_club_event_permalink', 10, 3);
+
+function party_club_event_rewrite_rules()
+{
+    add_rewrite_rule('^([0-9]+)/?$', 'index.php?post_type=event&p=$matches[1]', 'top');
+}
+add_action('init', 'party_club_event_rewrite_rules');
+
+/**
+ * 管理画面の投稿一覧から、イベント投稿の編集リンク（通常・クイック編集）を削除する
+ */
+function party_club_remove_event_edit_links($actions, $post)
+{
+    if ('event' === $post->post_type) {
+        unset($actions['edit']);
+        unset($actions['inline hide-if-no-js']); // クイック編集のリンク
+        unset($actions['quick_edit']);
+    }
+    return $actions;
+}
+add_filter('post_row_actions', 'party_club_remove_event_edit_links', 10, 2);
