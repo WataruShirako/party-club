@@ -192,6 +192,31 @@ function party_club_toggle_registration_endpoint(WP_REST_Request $request)
         update_post_meta($registration_id, 'user_id', $user_id);
         update_post_meta($registration_id, 'event_id', $event_id);
         update_post_meta($registration_id, 'registration_date', current_time('mysql'));
+
+        // イベント作成者にメールを送信
+        $event_author_id = $event_post->post_author;
+        $event_author = get_userdata($event_author_id);
+        $current_user = get_userdata($user_id);
+        $event_title = $event_post->post_title;
+
+        if ($event_author && is_email($event_author->user_email)) {
+            $subject = sprintf(__('[%s] 新しい参加者が登録しました', 'party-club'), get_bloginfo('name'));
+            $message = sprintf(
+                __('%s さんが「%s」イベントに参加登録しました。', 'party-club'),
+                $current_user->display_name,
+                $event_title
+            );
+            $message .= "\n\n";
+            $message .= sprintf(__('参加者: %s', 'party-club'), $current_user->display_name);
+            $message .= "\n";
+            $message .= sprintf(__('メールアドレス: %s', 'party-club'), $current_user->user_email);
+            $message .= "\n\n";
+            $message .= sprintf(__('イベント管理ページ: %s', 'party-club'), admin_url('edit.php?post_type=event&page=party-club-participants&event_id=' . $event_id));
+
+            $headers = array('From: ' . get_bloginfo('name') . ' <' . get_bloginfo('admin_email') . '>');
+            wp_mail($event_author->user_email, $subject, $message, $headers);
+        }
+
         return rest_ensure_response(array(
             'success'       => true,
             'registered'    => true,
@@ -657,26 +682,26 @@ function party_club_render_mass_email_page()
     $event_id = intval($_GET['event_id']);
     $event_title = get_the_title($event_id);
 ?>
-    <div class="wrap">
-        <h1><?php _e('一斉メール送信', 'party-club'); ?></h1>
-        <p><?php echo sprintf(__('「%s」の参加者にメールを送信します。', 'party-club'), $event_title); ?></p>
-        <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
-            <?php wp_nonce_field('party_club_mass_email', 'party_club_mass_email_nonce'); ?>
-            <input type="hidden" name="action" value="party_club_mass_email">
-            <input type="hidden" name="event_id" value="<?php echo esc_attr($event_id); ?>">
-            <table class="form-table">
-                <tr>
-                    <th scope="row"><label for="subject"><?php _e('件名', 'party-club'); ?></label></th>
-                    <td><input name="subject" type="text" id="subject" class="regular-text" required></td>
-                </tr>
-                <tr>
-                    <th scope="row"><label for="message"><?php _e('本文', 'party-club'); ?></label></th>
-                    <td><textarea name="message" id="message" rows="10" class="large-text code" required></textarea></td>
-                </tr>
-            </table>
-            <?php submit_button(__('送信', 'party-club')); ?>
-        </form>
-    </div>
+<div class="wrap">
+    <h1><?php _e('一斉メール送信', 'party-club'); ?></h1>
+    <p><?php echo sprintf(__('「%s」の参加者にメールを送信します。', 'party-club'), $event_title); ?></p>
+    <form method="post" action="<?php echo esc_url(admin_url('admin-post.php')); ?>">
+        <?php wp_nonce_field('party_club_mass_email', 'party_club_mass_email_nonce'); ?>
+        <input type="hidden" name="action" value="party_club_mass_email">
+        <input type="hidden" name="event_id" value="<?php echo esc_attr($event_id); ?>">
+        <table class="form-table">
+            <tr>
+                <th scope="row"><label for="subject"><?php _e('件名', 'party-club'); ?></label></th>
+                <td><input name="subject" type="text" id="subject" class="regular-text" required></td>
+            </tr>
+            <tr>
+                <th scope="row"><label for="message"><?php _e('本文', 'party-club'); ?></label></th>
+                <td><textarea name="message" id="message" rows="10" class="large-text code" required></textarea></td>
+            </tr>
+        </table>
+        <?php submit_button(__('送信', 'party-club')); ?>
+    </form>
+</div>
 <?php
 }
 
